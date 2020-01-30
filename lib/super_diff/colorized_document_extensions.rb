@@ -13,5 +13,17 @@ module SuperDiff
     def beta(*args, **opts, &block)
       colorize(*args, **opts, fg: SuperDiff::COLORS.fetch(:beta), &block)
     end
+
+    def highlight(*args, **opts, &block)
+      colorize(*args, **opts, fg: SuperDiff::COLORS.fetch(:highlight), &block)
+    end
+
+    def header(*args, **opts, &block)
+      colorize(*args, **opts, fg: SuperDiff::COLORS.fetch(:header), &block)
+    end
+
+    def border(*args, **opts, &block)
+      colorize(*args, **opts, fg: SuperDiff::COLORS.fetch(:border), &block)
+    end
   end
 end

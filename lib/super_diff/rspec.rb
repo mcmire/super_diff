@@ -6,10 +6,19 @@ module SuperDiff
     autoload :Configuration, "super_diff/rspec/configuration"
     autoload :Differ, "super_diff/rspec/differ"
     autoload :Differs, "super_diff/rspec/differs"
+    autoload(
+      :ExceptionMessageFormatters,
+      "super_diff/rspec/exception_message_formatters",
+    )
+    autoload(
+      :ExceptionMessageFormatterMap,
+      "super_diff/rspec/exception_message_formatter_map",
+    )
     autoload :MatcherTextBuilders, "super_diff/rspec/matcher_text_builders"
     autoload :MatcherTextTemplate, "super_diff/rspec/matcher_text_template"
     autoload :ObjectInspection, "super_diff/rspec/object_inspection"
     autoload :OperationalSequencers, "super_diff/rspec/operational_sequencers"
+    autoload :StringTagger, "super_diff/rspec/string_tagger"
 
     class << self
       attr_accessor :extra_differ_classes
@@ -23,6 +32,16 @@ module SuperDiff
 
     def self.configuration
       @_configuration ||= Configuration.new
+    end
+
+    def self.format_exception_message(exception_message)
+      exception_message_formatter_map.
+        call(exception_message).
+        call(exception_message)
+    end
+
+    def self.exception_message_formatter_map
+      @_exception_message_formatter_map ||= ExceptionMessageFormatterMap.new
     end
 
     def self.a_hash_including_something?(value)

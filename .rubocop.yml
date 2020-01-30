@@ -50,6 +50,7 @@ Metrics/BlockLength:
     - shared_context
     - shared_examples
     - shared_examples_for
+    - xit
 Metrics/ClassLength:
   Enabled: false
 Metrics/CyclomaticComplexity:
@@ -62,6 +63,7 @@ Metrics/LineLength:
     - "^\\s*context"
     - "^\\s*describe"
     - "^\\s*it"
+    - "^\\s*xit"
 Metrics/MethodLength:
   Enabled: false
 Metrics/ModuleLength:
@@ -84,6 +86,10 @@ Naming/UncommunicativeMethodParamName:
 Style/AccessModifierDeclarations:
   Enabled: false
 Style/Alias:
+  Enabled: false
+Style/AndOr:
+  Enabled: false
+Style/BlockComments:
   Enabled: false
 Style/CollectionMethods:
   Enabled: true
@@ -113,11 +119,15 @@ Style/MultilineBlockChain:
   Enabled: false
 Style/NegatedIf:
   Enabled: false
+Style/Next:
+  Enabled: false
 Style/NegatedWhile:
   Enabled: false
 Style/NumericPredicate:
   Enabled: false
 Style/OneLineConditional:
+  Enabled: false
+Style/ParenthesesAroundCondition:
   Enabled: false
 Style/PercentLiteralDelimiters:
   Enabled: false

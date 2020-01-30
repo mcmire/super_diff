@@ -9,6 +9,7 @@ require "rspec/matchers/built_in/eq"
 require "rspec/matchers/built_in/have_attributes"
 require "rspec/matchers/built_in/include"
 require "rspec/matchers/built_in/match"
+require "rspec/mocks/error_generator"
 
 module RSpec
   module Expectations
@@ -227,6 +228,24 @@ module RSpec
           lines
         end
 
+=begin
+        def exception_lines
+          lines = []
+          lines << "#{exception_class_name}:" unless exception_class_name =~ /RSpec/
+          # Run the exception message through the registered exception message
+          # formatters
+          message = SuperDiff::RSpec.format_exception_message(
+            encoded_string(exception.message.to_s)
+          )
+          message.split("\n").each do |line|
+            # Don't double-indent lines that already have indentation
+            # lines << ((line.empty? || line.match?(/^[ ]+/)) ? line : "  #{line}")
+            lines << (line.empty? ? line : "  #{line}")
+          end
+          lines
+        end
+=end
+
         # Exclude this file from being included in backtraces, so that the
         # SnippetExtractor prints the right thing
         def find_failed_line
@@ -270,39 +289,7 @@ module RSpec
       # Add a key for different sides
       def self.from(expected)
         return expected if self === expected
-
-        text =
-          colorizer.wrap("Diff:", SuperDiff::COLORS.fetch(:header)) +
-          "\n\n" +
-          colorizer.wrap(
-            "┌ (Key) ──────────────────────────┐",
-            SuperDiff::COLORS.fetch(:border)
-          ) +
-          "\n" +
-          colorizer.wrap("│ ", SuperDiff::COLORS.fetch(:border)) +
-          colorizer.wrap(
-            "‹-› in expected, not in actual",
-            SuperDiff::COLORS.fetch(:alpha)
-          ) +
-          colorizer.wrap("  │", SuperDiff::COLORS.fetch(:border)) +
-          "\n" +
-          colorizer.wrap("│ ", SuperDiff::COLORS.fetch(:border)) +
-          colorizer.wrap(
-            "‹+› in actual, not in expected",
-            SuperDiff::COLORS.fetch(:beta)
-          ) +
-          colorizer.wrap("  │", SuperDiff::COLORS.fetch(:border)) +
-          "\n" +
-          colorizer.wrap("│ ", SuperDiff::COLORS.fetch(:border)) +
-          "‹ › in both expected and actual" +
-          colorizer.wrap(" │", SuperDiff::COLORS.fetch(:border)) +
-          "\n" +
-          colorizer.wrap(
-            "└─────────────────────────────────┘",
-            SuperDiff::COLORS.fetch(:border)
-          )
-
-        new([[expected, text]])
+        new([[expected, SuperDiff::DiffLegendBuilder.call(expected)]])
       end
 
       def self.colorizer
@@ -730,5 +717,238 @@ module RSpec
       BuiltIn::MatchArray.new(items)
     end
     alias_matcher :an_array_matching, :match_array
+  end
+
+  module Mocks
+    class ErrorGenerator
+      def default_error_message(expectation, expected_args, actual_args)
+        SuperDiff::Helpers.style do |doc|
+          doc.red_line(
+            "#{intro} received ##{expectation.message} " +
+            "with unexpected arguments."
+          )
+
+          doc.newline
+
+          doc.line "Expected: #{expected_args}"
+          doc.line "     Got: #{actual_args}"
+        end.to_s
+      end
+
+      def raise_expectation_error(
+        message,
+        expected_received_count,
+        argument_list_matcher,
+        actual_received_count,
+        expectation_count_type,
+        args,
+        backtrace_line = nil,
+        source_id = nil
+      )
+        expected_part = expected_part_of_expectation_error(
+          expected_received_count,
+          expectation_count_type,
+          argument_list_matcher
+        )
+        received_part = received_part_of_expectation_error(
+          actual_received_count,
+          args
+        )
+
+        error_message = [
+          SuperDiff::Helpers.style(
+            :red,
+            "Expectation failed for double: " +
+            "#{@target.class}##{message}"
+          ),
+          "\n\n",
+          "#{expected_part}\n",
+          "#{received_part}"
+        ].join
+
+        __raise(error_message, backtrace_line, source_id)
+      end
+
+      def raise_unimplemented_error(doubled_module, method_name, object)
+        message = SuperDiff::Helpers.style do
+          line do
+            red "Could not place double."
+          end
+
+          newline
+        end
+
+        case object
+        when InstanceVerifyingDouble
+          message.add_line do
+            plain "The "
+            highlight doubled_module.description
+            plain " class does not implement the instance method "
+            highlight method_name.to_s
+            plain "."
+          end
+
+          if ObjectMethodReference.for(doubled_module, method_name).implemented?
+            message.add_line do
+              plain "Perhaps you meant to use "
+              highlight "class_double"
+              plain " instead?"
+            end
+          end
+        when ClassVerifyingDouble
+          message.add_line do
+            plain "The "
+            highlight doubled_module.description
+            plain " class does not implement the class method "
+            highlight method_name.to_s
+            plain "."
+          end
+
+          if ObjectMethodReference.for(doubled_module, method_name).implemented?
+            message.add_line do
+              plain "Perhaps you meant to use "
+              highlight "instance_double"
+              plain " instead?"
+            end
+          end
+        else
+          message.line do
+            blue method_name.to_s
+            plain " is not a method on "
+            yellow doubled_module.description
+            plain "."
+          end
+        end
+
+        __raise message.to_s
+      end
+
+      def method_call_args_description(
+        args,
+        generic_prefix = " with arguments: ",
+        matcher_prefix = " with ",
+        color:
+      )
+        case args.first
+        when ArgumentMatchers::AnyArgsMatcher
+          [
+            matcher_prefix,
+            SuperDiff::Helpers.style(color, "any"),
+            " arguments"
+          ].join
+        when ArgumentMatchers::NoArgsMatcher
+          [
+            matcher_prefix,
+            SuperDiff::Helpers.style(color, "no"),
+            " arguments"
+          ].join
+        else
+          if yield
+            [
+              generic_prefix,
+              SuperDiff::Helpers.style(color, format_args(args))
+            ].join
+          else
+            ""
+          end
+        end
+      end
+
+      def intro(unwrapped=false)
+        case @target
+        when TestDouble then TestDoubleFormatter.format(@target, unwrapped)
+        when Class then @target.name
+        when NilClass then "nil"
+        else "#<#{@target.class.name}>"
+        end
+      end
+
+      private
+
+      def received_part_of_expectation_error(actual_received_count, args)
+        rest = count_message(actual_received_count, color: :beta)
+
+        if actual_received_count > 0
+          rest << method_call_args_description(args, color: :beta) do
+            args.length > 0
+          end
+        end
+
+        "Received: #{rest}"
+      end
+
+      def expected_part_of_expectation_error(expected_received_count, expectation_count_type, argument_list_matcher)
+        rest = [
+          count_message(
+            expected_received_count, expectation_count_type,
+            color: :alpha
+          ),
+          method_call_args_description(
+            argument_list_matcher.expected_args,
+            color: :alpha
+          ) do
+            argument_list_matcher.expected_args.length > 0
+          end
+        ].join
+
+        "Expected: #{rest}"
+      end
+
+      def error_message(expectation, args_for_multiple_calls)
+        expected_args = SuperDiff::Helpers.style(
+          :alpha,
+          format_args(expectation.expected_args)
+        )
+        actual_args = format_received_args(args_for_multiple_calls)
+        message = default_error_message(expectation, expected_args, actual_args)
+
+        if args_for_multiple_calls.one?
+          diff = diff_message(
+            expectation.expected_args,
+            args_for_multiple_calls.first
+          )
+
+          unless diff.strip.empty?
+            message << "\n\n"
+            message << SuperDiff::DiffLegendBuilder.call(expectation.expected_args).to_s
+            message << diff
+          end
+        end
+
+        message
+      end
+
+      def format_received_args(args_for_multiple_calls)
+        grouped_args(args_for_multiple_calls).map do |args_for_one_call, index|
+          SuperDiff::Helpers.style(:beta, format_args(args_for_one_call)) +
+            group_count(index, args_for_multiple_calls, color: :beta)
+        end.join("\n            ")
+      end
+
+      def count_message(count, expectation_count_type=nil, color:)
+        if count < 0 || expectation_count_type == :at_least
+          times(count.abs, color: color, prefix: "at least ")
+        end
+
+        if expectation_count_type == :at_most
+          times(count.abs, color: color, prefix: "at most ")
+        end
+
+        times(count, color: color)
+      end
+
+      def group_count(index, args, color:)
+        " (#{times(index, color: color)})" if args.size > 1 || index > 1
+      end
+
+      def times(count, color:, prefix: '')
+        SuperDiff::Helpers.style(color, "#{prefix}#{count}") +
+          " time#{count == 1 ? '' : 's'}"
+      end
+
+      def differ
+        SuperDiff::RSpec::Differ
+      end
+    end
   end
 end

@@ -84,7 +84,12 @@ module SuperDiff
         end
 
         RSpec.configure do |config|
+          config.mock_with :rspec do |mocks|
+            mocks.verify_partial_doubles = true
+          end
+
           config.color_mode = :#{color_enabled ? "on" : "off"}
+
           config.include SuperDiff::IntegrationTests
         end
 
@@ -114,7 +119,8 @@ module SuperDiff
       expectation:,
       newline_before_expectation: false,
       indentation: 7,
-      diff: nil
+      diff: nil,
+      after_diff: nil
     )
       colored(color_enabled: color_enabled) do
         line "Failures:\n"
@@ -131,7 +137,7 @@ module SuperDiff
         end
 
         indent by: indentation do
-          evaluate_block(&expectation)
+          apply(&expectation)
 
           if diff
             newline
@@ -168,9 +174,13 @@ module SuperDiff
 
             newline
 
-            evaluate_block(&diff)
+            apply(&diff)
 
             newline
+
+            if after_diff
+              apply(&after_diff)
+            end
           end
         end
       end
